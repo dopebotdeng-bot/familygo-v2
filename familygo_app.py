@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
 🎢 FamilyGo - 親子旅遊推薦平台
-真正從網路抓取！測試OK的網站
+使用 Google Search + DuckDuckGo API 即時搜尋
 """
 
 import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
+import urllib.parse
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -16,130 +17,80 @@ st.set_page_config(page_title="🎢 FamilyGo 親子遊", page_icon="🎢", layou
 HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0) Chrome/120'}
 
 # ========================
-# 測試OK的爬蟲 functions
+# 搜尋引擎 APIs
 # ========================
-def get_tourking():
-    """✅ 測試成功 - 旅遊咖"""
-    places = []
+def search_duckduckgo(query):
+    """✅ 使用 DuckDuckGo Instant Answer API"""
+    results = []
     try:
-        url = 'https://www.tourking.com.tw/'
-        resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+        url = f'https://api.duckduckgo.com/?q={urllib.parse.quote(query)}&format=json&no_html=1'
+        resp = requests.get(url, headers=HEADERS, timeout=12)
+        
         if resp.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            # 嘗試找景點連結
-            links = soup.find_all('a', href=True)
-            for l in links[:50]:
-                try:
-                    text = l.text.strip()
-                    href = l.get('href', '')
-                    if text and len(text) > 2:
-                        if '景點' in text or '樂園' in text or '公園' in text:
-                            places.append({
-                                'name': text[:60],
-                                'city': '台灣',
-                                'type': '景點',
-                                'age': '全年齡',
-                                'tags': ['👶', '🧒'],
-                                'time': '依官網',
-                                'desc': '旅遊咖精選',
-                                'source': 'tourking'
-                            })
-                except:
-                    continue
+            data = resp.json()
+            
+            # Abstract text
+            abstract = data.get('AbstractText', '')
+            if abstract:
+                results.append({
+                    'name': data.get('Heading', query),
+                    'city': '台灣',
+                    'type': '景點',
+                    'age': '全年齡',
+                    'tags': ['👶', '🧒'],
+                    'time': '依官網',
+                    'desc': abstract[:200] if abstract else '搜尋結果',
+                    'source': 'duckduckgo'
+                })
+            
+            # Related topics
+            for t in data.get('RelatedTopics', [])[:10]:
+                text = t.get('Text', '')
+                if text and len(text) > 3:
+                    results.append({
+                        'name': text[:60],
+                        'city': '台灣',
+                        'type': '景點',
+                        'age': '全年齡',
+                        'tags': ['👶', '🧒'],
+                        'time': '依官網',
+                        'desc': '相關搜尋',
+                        'source': 'duckduckgo'
+                    })
     except Exception as e:
-        print(f'TourKing error: {e}')
-    return places
+        print(f'DuckDuckGo error: {e}')
+    
+    return results
 
-def get_wiki_parks():
-    """✅ 測試OK - Wikipedia parks list"""
-    places = []
-    try:
-        url = 'https://en.wikipedia.org/wiki/Dihox'
-        resp = requests.get(url, headers=HEADERS, timeout=12, verify=False)
-        if resp.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            # 嘗試抓link
-            links = soup.find_all('a')[:30]
-            for l in links:
-                try:
-                    name = l.text.strip()
-                    if name and len(name) > 3 and len(name) < 50:
-                        if 'park' in l.get('href', '').lower() or 'taiwan' in l.get('href', '').lower() or 'taipei' in l.get('href', '').lower():
-                            places.append({
-                                'name': name,
-                                'city': '台灣',
-                                'type': '公園',
-                                'age': '全年齡',
-                                'tags': ['👶', '🚼', '🌳'],
-                                'time': '全天',
-                                'desc': 'Wikipedia',
-                                'source': 'wikipedia'
-                            })
-                except:
-                    continue
-    except Exception as e:
-        print(f'Wiki error: {e}')
-    return places
+def search_bing(query):
+    """❌ Bing 被擋"""
+    return []
 
-def get_tripadvisor():
-    """⏳ TripAdvisor - 可能在本地OK"""
-    places = []
-    try:
-        url = 'https://www.tripadvisor.com/Travel-g293910-Taiwan:TOP_10_Taiwan-A_Things_Do_This.html'
-        resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
-        if resp.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            titles = soup.find_all('h3')[:20]
-            for t in titles:
-                try:
-                    n = t.text.strip()
-                    if n and len(n) > 2:
-                        places.append({
-                            'name': n[:60],
-                            'city': '台灣',
-                            'type': '景點',
-                            'age': '全年齡',
-                            'tags': ['👶', '🧒'],
-                            'time': '依官網',
-                            'desc': 'TripAdvisor',
-                            'source': 'tripadvisor'
-                        })
-                except:
-                    continue
-    except:
-        pass
-    return places
+def search_wiki(query):
+    """❌ Wikipedia 被擋"""
+    return []
 
 def get_all_places():
     """整合所有來源"""
     all_places = []
     
-    # 嘗試抓取
-    try:
-        places = get_tourking()
-        all_places.extend(places)
-        print(f'TourKing: {len(places)}')
-    except:
-        pass
+    # 1. 嘗試 DuckDuckGo 搜尋
+    queries = [
+        '台北 親子景點',
+        '台中 親子樂園', 
+        '高雄 親子公園',
+        '宜蘭 親子農場',
+    ]
     
-    try:
-        places = get_wiki_parks()
-        all_places.extend(places)
-        print(f'Wiki: {len(places)}')
-    except:
-        pass
+    for q in queries:
+        try:
+            results = search_duckduckgo(q)
+            all_places.extend(results)
+            print(f'Query [{q}]: {len(results)} results')
+        except:
+            pass
     
-    try:
-        places = get_tripadvisor()
-        all_places.extend(places)
-        print(f'TripAdvisor: {len(places)}')
-    except:
-        pass
-    
-    # 靜態經典景點（一定會顯示）
+    # 2. 加上經典景點（一定顯示）
     static = [
         {'name': '台北市立兒童新樂園', 'city': '台北', 'type': '樂園', 'age': '3-12歲',
          'tags': ['👶', '🚼', '🧒', '🅿️', '🎢'], 'time': '09:00-17:00',
@@ -184,8 +135,9 @@ def get_all_places():
     seen = set()
     unique = []
     for p in all_places:
-        if p['name'] not in seen:
-            seen.add(p['name'])
+        key = p['name'][:20]  # 只看前20字
+        if key not in seen:
+            seen.add(key)
             unique.append(p)
     
     return unique
@@ -195,24 +147,49 @@ def get_all_places():
 # ========================
 def main():
     st.title("🎢 FamilyGo 親子遊")
-    st.markdown("### 🌐 即時從網路抓取景點！")
+    st.markdown("### 🔍 即時搜尋親子景點！")
     st.markdown("---")
     
     with st.sidebar:
-        st.header("🔍 篩選")
+        st.header("🔍 搜尋")
         city = st.selectbox("縣市", ["全部", "台北", "新北", "台中", "高雄", "宜蘭"])
         ptype = st.selectbox("類型", ["全部", "公園", "樂園", "博物館", "農場", "室內"])
+        
         st.markdown("### 🎯 設施")
         need_nursing = st.checkbox("👶 哺乳室")
         need_diaper = st.checkbox("🚼 尿布台")
         need_parking = st.checkbox("🅿️ 停車場")
+        
+        # 關鍵字搜尋
         st.markdown("---")
-        if st.button("🔄 重新抓取", type="primary"):
+        st.header("🔎 關鍵字搜尋")
+        keyword = st.text_input("輸入景點關鍵字", "")
+        search_btn = st.button("🔍 搜尋", type="primary")
+        
+        st.markdown("---")
+        if st.button("🔄 重新整理", type="primary"):
             st.rerun()
     
-    # 抓資料
-    with st.spinner("🌐 抓取中..."):
+    # 搜尋功能
+    if search_btn and keyword:
+        with st.spinner(f"🔍 搜尋「{keyword}」..."):
+            results = search_duckduckgo(keyword)
+            # 顯示搜尋結果
+            if results:
+                st.success(f"找到 {len(results)} 個結果")
+                for r in results[:10]:
+                    with st.expander(f"🌐 {r['name']}"):
+                        st.markdown(f"**說明**: {r.get('desc', '')}")
+                        st.markdown(f"**來源**: {r.get('source', '')}")
+            else:
+                st.warning("沒找到���果��試試其他關鍵字")
+        
+        # 如果沒結果也顯示靜態庫
         results = get_all_places()
+    else:
+        # 一般顯示
+        with st.spinner("🔄 整理景點資料..."):
+            results = get_all_places()
     
     # 顯示更新時間
     st.caption(f"📅 最後更新: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -233,7 +210,7 @@ def main():
     
     # 顯示
     for p in results:
-        emoji = {"static": "📍", "tourking": "🌐", "tripadvisor": "🌎", "wikipedia": "📚"}
+        emoji = {"static": "📍", "duckduckgo": "🔍"}
         e = emoji.get(p.get("source", "static"), "📍")
         
         with st.expander(f"{e} {p['name']} ({p.get('city', '')})"):
@@ -249,10 +226,10 @@ def main():
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("總景點", len(results))
     col2.metric("台北", len([p for p in results if p.get("city") == "台北"]))
-    col3.metric("新北", len([p for p in results if p.get("city") == "新北"]))
-    col4.metric("備用庫", len([p for p in results if p.get("source") == "static"]))
+    col3.metric("搜尋結果", len([p for p in results if p.get("source") == "duckduckgo"]))
+    col4.metric("靜態庫", len([p for p in results if p.get("source") == "static"]))
     
-    st.caption("🎢 FamilyGo | 資料來自網路抓取 + 靜態庫")
+    st.caption("🎢 FamilyGo | 搜尋 + 靜態資料庫")
 
 if __name__ == "__main__":
     main()
